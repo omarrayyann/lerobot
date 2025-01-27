@@ -43,7 +43,7 @@ INFO_PATH = "meta/info.json"
 EPISODES_PATH = "meta/episodes.jsonl"
 STATS_PATH = "meta/stats.json"
 EPISODES_STATS_PATH = "meta/episodes_stats.jsonl"
-TASKS_PATH = "meta/tasks.jsonl"
+STRING_DICT_PATH_TEMPLATE = "meta/{name}s.jsonl"
 
 DEFAULT_VIDEO_PATH = "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
 DEFAULT_PARQUET_PATH = "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
@@ -64,7 +64,7 @@ DEFAULT_FEATURES = {
     "frame_index": {"dtype": "int64", "shape": (1,), "names": None},
     "episode_index": {"dtype": "int64", "shape": (1,), "names": None},
     "index": {"dtype": "int64", "shape": (1,), "names": None},
-    "task_index": {"dtype": "int64", "shape": (1,), "names": None},
+    "task_index": {"dtype": "int64", "shape": (1,), "names": None, "string_dict": "task"},
 }
 
 
@@ -191,18 +191,23 @@ def load_stats(local_dir: Path) -> dict:
     return cast_stats_to_numpy(stats)
 
 
-def write_task(task_index: int, task: dict, local_dir: Path):
-    task_dict = {
-        "task_index": task_index,
-        "task": task,
+def write_string_entry(name: str, entry_index: int, entry: str, local_dir: Path):
+    string_dict = {
+        f"{name}_index": entry_index,
+        f"{name}": entry,
     }
-    append_jsonlines(task_dict, local_dir / TASKS_PATH)
+    append_jsonlines(string_dict, local_dir / STRING_DICT_PATH_TEMPLATE.format(name))
 
 
-def load_tasks(local_dir: Path) -> dict:
-    tasks = load_jsonlines(local_dir / TASKS_PATH)
-    return {item["task_index"]: item["task"] for item in sorted(tasks, key=lambda x: x["task_index"])}
+def load_string_dict(name: str, local_dir: Path) -> dict:
+    string_dict = load_jsonlines(local_dir / STRING_DICT_PATH_TEMPLATE.format(name))
+    return {item[f"{name}_index"]: item[name] for item in sorted(string_dict, key=lambda x: x[f"{name}_index"])}
 
+def load_string_dicts(names: list[str], local_dir: Path):
+    string_dicts = {}
+    for name in names:
+        string_dicts[name] = load_string_dict(name, local_dir)
+    return string_dicts
 
 def write_episode(episode: dict, local_dir: Path):
     append_jsonlines(episode, local_dir / EPISODES_PATH)
