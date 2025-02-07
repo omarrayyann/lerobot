@@ -282,7 +282,7 @@ class PI0Policy(PreTrainedPolicy):
             state = self.prepare_state(batch)
             lang_tokens, lang_masks = self.prepare_language(batch)
 
-            actions = self.model.sample_actions(
+            actions, generated_text = self.model.sample_actions(
                 images, img_masks, lang_tokens, lang_masks, state, noise=noise
             )
 
@@ -298,7 +298,7 @@ class PI0Policy(PreTrainedPolicy):
             # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
             self._action_queue.extend(actions.transpose(0, 1))
-        return self._action_queue.popleft()
+        return self._action_queue.popleft(), generated_text
 
     def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> dict[str, Tensor]:
         """Do a full training forward pass to compute the loss"""
@@ -481,6 +481,8 @@ class PI0FlowMatching(nn.Module):
 
         self.action_time_mlp_in = nn.Linear(self.config.proj_width * 2, self.config.proj_width)
         self.action_time_mlp_out = nn.Linear(self.config.proj_width, self.config.proj_width)
+
+        self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
 
         self.set_requires_grad()
 
@@ -674,6 +676,16 @@ class PI0FlowMatching(nn.Module):
             fill_kv_cache=True,
         )
 
+        # Generate text (only paligemma part)
+        generation = self.paligemma_with_expert.paligemma.generate(
+            inputs_embeds=prefix_embs,
+            attention_mask=prefix_att_masks,
+            position_ids=prefix_position_ids,
+            max_new_tokens=100,
+            do_sample=False)
+        generation = generation[0]
+        generated_text = self.language_tokenizer.decode(generation, skip_special_tokens=True)
+
         dt = -1.0 / self.config.num_steps
         dt = torch.tensor(dt, dtype=torch.float32, device=device)
 
@@ -692,8 +704,8 @@ class PI0FlowMatching(nn.Module):
             # Euler step
             x_t += dt * v_t
             time += dt
-        return x_t
-
+        return x_t, generated_text
+    
     def denoise_step(
         self,
         state,
